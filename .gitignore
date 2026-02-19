@@ -1,0 +1,20 @@
+# Pastas locais do Terraform
+**/.terraform/*
+
+# Arquivos de estado (NUNCA commitar)
+*.tfstate
+*.tfstate.*
+
+# Arquivos de log de erro
+crash.log
+crash.*.log
+
+# Arquivos de variáveis com dados sensíveis
+*.tfvars
+*.tfvars.json
+
+# Arquivos de override
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
