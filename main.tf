@@ -18,26 +18,6 @@ module "vpc" {
   enable_dns_hostnames = true
 }
 
-resource "aws_security_group" "bastion_sg" {
-    name = "bastion_sg"
-    description = "Permite apenas IPs autorizados fazerem a conexao via SSH na subnet publica"
-    vpc_id = module.vpc.vpc_id
-
-    ingress {
-      from_port = 22
-      to_port = 22
-      protocol = "tcp"
-      cidr_blocks = var.lista_ips_publicos
-    }
-
-    egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-
 resource "aws_security_group" "alb_sg" {
   name        = "alb-sg"
   description = "Permite HTTP externo para o ALB"
@@ -139,18 +119,6 @@ resource "aws_lb_listener" "http" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.brinks_tg.arn
-  }
-}
-
-resource "aws_instance" "brinks-bastion" {
-  ami = var.ami_ubuntu
-  instance_type = var.instance_type
-  subnet_id = module.vpc.public_subnets[0]
-  vpc_security_group_ids = [aws_security_group.bastion_sg.id]
-  associate_public_ip_address = true
-
-  tags = {
-    Name = "brinks-bastion"
   }
 }
 

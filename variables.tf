@@ -21,8 +21,3 @@ variable "instance_type" {
   type        = string
   default     = "t3.micro"
 }
-
-variable "lista_ips_publicos" {
-    description = "Lista de ips publicos permitidos para SSH"
-    type = list(string)
-}
