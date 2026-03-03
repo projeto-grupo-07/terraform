@@ -1,0 +1,82 @@
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Permite HTTP externo para o ALB"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = var.porta_http
+    to_port     = var.porta_http
+    protocol    = "tcp"
+    cidr_blocks = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
+}
+
+resource "aws_security_group" "pub_sg" {
+  name        = "pub-sg"
+  description = "Permite SSH e HTTP externos"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = var.porta_ssh
+    to_port     = var.porta_ssh
+    protocol    = "tcp"
+    cidr_blocks = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
+  ingress {
+    from_port   = var.porta_http
+    to_port     = var.porta_http
+    protocol    = "tcp"
+    cidr_blocks = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
+}
+
+resource "aws_security_group" "pri_sg" {
+  name        = "pri-sg"
+  description = "Permite ALB (Backend), SSH (Bastion) e MySQL (Interno)"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port       = var.porta_http
+    to_port         = var.porta_http
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+  
+  ingress {
+    from_port       = var.porta_ssh
+    to_port         = var.porta_ssh
+    protocol        = "tcp"
+    security_groups = [aws_security_group.pub_sg.id]
+  }
+
+  ingress {
+    from_port   = var.porta_mysql
+    to_port     = var.porta_mysql
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
+  }
+}
