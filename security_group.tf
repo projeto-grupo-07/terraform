@@ -80,3 +80,7 @@ resource "aws_security_group" "pri_sg" {
     cidr_blocks = [module.vpc.vpc_cidr_block]
   }
 }
+
+data "aws_iam_role" "lab_role" {
+  name = "LabRole"
+}

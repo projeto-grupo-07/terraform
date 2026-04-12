@@ -58,3 +58,7 @@ variable "ips_qualquer_lugar_v6" {
     default = [ "::/0" ]
   
 }
+
+variable "lambda_raw_name" {
+  default = "lambda-raw"
+}
