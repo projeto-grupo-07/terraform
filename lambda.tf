@@ -1,19 +1,19 @@
 resource "aws_lambda_function" "lambda_raw" {
-  filename      = "lambdas/lambda_raw.zip" 
+  filename      = "lambdas/lambda_raw.zip"
   function_name = "lambda-raw"
   role          = data.aws_iam_role.lab_role.arn
-  handler       = "lambda_raw.lambda_handler" 
+  handler       = "lambda_raw.lambda_handler"
   runtime       = "python3.12"
   memory_size   = 512
   timeout       = 60
 
-    layers = ["arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:14"]
+  layers = ["arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:14"]
 
   environment {
     variables = {
-        S3_BUCKET   = aws_s3_bucket.bucket_raw.bucket
-        S3_PREFIX   = "importacao"        # Aspas adicionadas
-        MESES_ATRAS = "3"                 # Aspas adicionadas (Terraform exige string) isso vai mudar
+      S3_BUCKET   = aws_s3_bucket.bucket_raw.bucket
+      S3_PREFIX   = "importacao" # Aspas adicionadas
+      MESES_ATRAS = "3"          # Aspas adicionadas (Terraform exige string) isso vai mudar
     }
   }
 
@@ -29,7 +29,7 @@ resource "aws_lambda_function" "lambda_trusted" {
   memory_size   = 512
   timeout       = 60
 
-layers = ["arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:14"]
+  layers = ["arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:14"]
 
   environment {
     variables = {
@@ -45,7 +45,7 @@ resource "aws_lambda_permission" "allow_s3" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.lambda_trusted.function_name # Modificado para lambda_trusted
   principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.bucket_raw.arn 
+  source_arn    = aws_s3_bucket.bucket_raw.arn
 }
 
 resource "aws_s3_bucket_notification" "bucket_notification" {
@@ -54,8 +54,8 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
   lambda_function {
     lambda_function_arn = aws_lambda_function.lambda_trusted.arn # Modificado para lambda_trusted
     events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "importacao/" 
-    filter_suffix       = ".csv"       
+    filter_prefix       = "importacao/"
+    filter_suffix       = ".csv"
   }
 
   depends_on = [aws_lambda_permission.allow_s3]

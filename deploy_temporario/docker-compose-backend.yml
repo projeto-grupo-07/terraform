@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_DATABASE: db_brink_calcados
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.10-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  backend:
+    image: viniciusoliveira201002/backend:latest
+    container_name: backend
+    depends_on:
+      - mysql
+      - rabbitmq
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+      DB_HOST: mysql
+      DB_NAME: db_brink_calcados
+      DB_USER: root
+      DB_PASS: root
+
+      JWT_SECRET: super_secret_prod
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+
+    restart: unless-stopped
+
+  ms-report-async:
+    image: viniciusoliveira201002/ms-report-async:latest
+    container_name: ms-report-async
+    depends_on:
+      - rabbitmq
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: admin
+      AWS_REGION: us-east-1
+    restart: unless-stopped
+
+  ms-email:
+    image: viniciusoliveira201002/ms-email:latest
+    container_name: ms-email
+    depends_on:
+      - rabbitmq
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: admin
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  rabbitmq_data:

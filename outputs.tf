@@ -3,10 +3,6 @@ output "instance_public_ip_pub_1" {
   value       = aws_instance.brinks-pub-1.public_ip
 }
 
-output "instance_public_ip_pub_2" {
-  description = "IP Público da instância EC2 (pub-2)"
-  value       = aws_instance.brinks-pub-2.public_ip
-}
 
 output "instance_hostname_pri_1" {
   description = "DNS Privado da instância EC2 (pri-1)"
