@@ -12,12 +12,22 @@ resource "aws_lambda_function" "lambda_raw" {
   environment {
     variables = {
       S3_BUCKET   = aws_s3_bucket.bucket_raw.bucket
-      S3_PREFIX   = "importacao" # Aspas adicionadas
-      MESES_ATRAS = "3"          # Aspas adicionadas (Terraform exige string) isso vai mudar
+      S3_PREFIX   = "importacao" # Aspas adicionadas        # Aspas adicionadas (Terraform exige string) isso vai mudar
     }
   }
 
   source_code_hash = filebase64sha256("lambdas/lambda_raw.zip")
+}
+
+resource "aws_lambda_function_url" "lambda_raw_url" {
+  function_name      = aws_lambda_function.lambda_raw.function_name
+  authorization_type = "AWS_IAM" 
+
+  cors {
+    allow_origins = ["*"]
+    allow_methods = ["POST"]
+    allow_headers = ["content-type"]
+  }
 }
 
 resource "aws_lambda_function" "lambda_trusted" {

@@ -15,3 +15,9 @@ resource "aws_s3_bucket" "bucket_client" {
   tags          = { Name = "MyS3Bucket" }
   force_destroy = true
 }
+
+resource "aws_s3_bucket" "bucket_backup_database" {
+  bucket        = "brinks-bucket-backup-database-${var.user_suffix}"
+  tags          = { Name = "MyS3Bucket" }
+  force_destroy = true
+}
