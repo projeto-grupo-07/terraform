@@ -2,6 +2,6 @@ version: "3.8"
 
 services:
   frontend:
-    image: viniciusoliveira201002/frontend:latest
+    image: guilhermefigueiredodocker/brinks-frontend:latest
     ports:
       - "80:80"

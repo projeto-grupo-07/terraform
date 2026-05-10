@@ -6,8 +6,9 @@ resource "aws_instance" "brinks-db" {
   key_name               = var.instance_key
 
   user_data = templatefile("${path.module}/deploy_temporario/database.sh.tftpl", {
-    init_sql_content = file("${path.module}/deploy_temporario/init.sql")
-  })
+  init_sql_content = file("${path.module}/deploy_temporario/sql/init.sql"),
+  compose_backend = file("${path.module}/deploy_temporario/docker-compose-backend.yml")
+})
 
   tags = { Name = "brinks-db-server" }
 }
@@ -21,7 +22,8 @@ resource "aws_instance" "brinks-pub-1" {
   key_name                    = var.instance_key
 
   user_data = templatefile("${path.module}/deploy_temporario/frontend.sh.tftpl", {
-    alb_dns = aws_lb.brinks_alb.dns_name
+    alb_dns = aws_lb.brinks_alb.dns_name,
+    compose_frontend = file("${path.module}/deploy_temporario/docker-compose-frontend.yml")
   })
 
   tags = {
@@ -38,7 +40,6 @@ resource "aws_instance" "brinks-pri-1" {
   vpc_security_group_ids = [aws_security_group.pri_sg.id]
   key_name               = var.instance_key
 
-  # Injeta o IP privado da instância de banco no script
   user_data = templatefile("${path.module}/deploy_temporario/backend.sh.tftpl", {
     db_host = aws_instance.brinks-db.private_ip
   })

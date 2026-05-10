@@ -5,10 +5,18 @@ services:
     image: mysql:8.0
     container_name: mysql
     environment:
-      MYSQL_DATABASE: db_brink_calcados
       MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: db_brink_calcados
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   rabbitmq:
@@ -19,38 +27,63 @@ services:
       RABBITMQ_DEFAULT_PASS: admin
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   backend:
-    image: viniciusoliveira201002/backend:latest
+    image: guilhermefigueiredodocker/brinks-backend-prod:latest
     container_name: backend
     depends_on:
-      - mysql
-      - rabbitmq
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
+      # Spring Profile
       SPRING_PROFILES_ACTIVE: prod
-
-      DB_HOST: mysql
-      DB_NAME: db_brink_calcados
-      DB_USER: root
-      DB_PASS: root
-
-      JWT_SECRET: super_secret_prod
-
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: admin
-      RABBITMQ_PASS: admin
-
+      
+      # Database (estes são usados pelo application-prod.properties)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/db_brink_calcados?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      
+      # JWT - MÍNIMO 32 caracteres!
+      JWT_SECRET: brink-calcados-super-secret-key-com-32-caracteres-ou-mais-2026
+      
+      # RabbitMQ
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: admin
+      
+      # JVM
+      JAVA_OPTS: "-Xmx512m -Xms256m"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
     restart: unless-stopped
 
   ms-report-async:
-    image: viniciusoliveira201002/ms-report-async:latest
+    image: guilhermefigueiredodocker/brinks-ms-report
     container_name: ms-report-async
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
@@ -60,10 +93,11 @@ services:
     restart: unless-stopped
 
   ms-email:
-    image: viniciusoliveira201002/ms-email:latest
+    image: guilhermefigueiredodocker/brinks-ms-email
     container_name: ms-email
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672

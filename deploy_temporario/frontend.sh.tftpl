@@ -32,12 +32,10 @@ server {
 }
 EOF
 
-# 2. Puxamos a sua imagem (que já tem o Nginx e o Build do React)
-sudo docker pull viniciusoliveira201002/frontend:latest
+# 2. Escreve o docker-compose do repositório e usa ele
+cat << 'EOF_COMPOSE' > /app/docker-compose.yml
+${compose_frontend}
+EOF_COMPOSE
 
-# 3. Rodamos o container SOBRESCREVENDO a config padrão dele
-sudo docker run -d \
-  --name frontend \
-  -p 80:80 \
-  -v /app/nginx/default.conf:/etc/nginx/conf.d/default.conf \
-  viniciusoliveira201002/frontend:latest
+sudo docker compose -f /app/docker-compose.yml pull || true
+sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans
