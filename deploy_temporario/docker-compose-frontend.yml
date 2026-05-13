@@ -1,7 +1,15 @@
-version: "3.8"
-
+version: '3.8'
 services:
   frontend:
     image: guilhermefigueiredodocker/brinks-frontend:latest
     ports:
       - "80:80"
+    restart: always
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 30 --cleanup

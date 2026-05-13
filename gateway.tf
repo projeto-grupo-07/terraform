@@ -32,7 +32,4 @@ resource "aws_lambda_permission" "api_gw" {
   source_arn    = "${aws_apigatewayv2_api.lambda_api.execution_arn}/*/*"
 }
 
-# Output the new URL
-output "api_url" {
-  value = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio"
-}
+

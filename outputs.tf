@@ -18,3 +18,7 @@ output "load_balancer_dns" {
   description = "DNS público do Load Balancer para acessar o Backend"
   value       = aws_lb.brinks_alb.dns_name
 }
+
+output "api_url" {
+  value = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio"
+}

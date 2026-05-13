@@ -1,55 +1,54 @@
 #!/bin/bash
 set -euxo pipefail
 
+# Atualiza sistema
+sudo apt update && sudo apt upgrade -y
+
+# Instala dependências
+sudo apt install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Instala Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
-cat << 'EOF_COMPOSE' > /app/docker-compose-app.yml
-version: "3.8"
-services:
-  backend:
-    image: guilhermefigueiredodocker/brinks-backend-prod:latest
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      JAVA_OPTS: "-Xmx512m -Xms256m"
-      SPRING_DATASOURCE_URL: "jdbc:mysql://${db_host}:3306/db_brink_calcados?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-      SPRING_DATASOURCE_USERNAME: "$${SPRING_DATASOURCE_USERNAME:-appuser}"
-      SPRING_DATASOURCE_PASSWORD: "$${SPRING_DATASOURCE_PASSWORD:-app123}"
-      JWT_SECRET: "$${JWT_SECRET:-brink-calcados-super-secret-key-com-32-caracteres-ou-mais-2026}"
-      SPRING_RABBITMQ_HOST: ${db_host}
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: "$${SPRING_RABBITMQ_USERNAME:-admin}"
-      SPRING_RABBITMQ_PASSWORD: "$${SPRING_RABBITMQ_PASSWORD:-admin}"
-    restart: unless-stopped
+sudo sh get-docker.sh
 
-  ms-report-async:
-    image: guilhermefigueiredodocker/brinks-ms-report
-    environment:
-      SPRING_RABBITMQ_HOST: ${db_host}
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: "$${SPRING_RABBITMQ_USERNAME:-admin}"
-      SPRING_RABBITMQ_PASSWORD: "$${SPRING_RABBITMQ_PASSWORD:-admin}"
-      AWS_REGION: us-east-1
-    restart: unless-stopped
+# Habilita Docker
+sudo systemctl enable docker
+sudo systemctl start docker
 
-  ms-email:
-    image: guilhermefigueiredodocker/brinks-ms-email
-    environment:
-      SPRING_RABBITMQ_HOST: ${db_host}
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: "$${SPRING_RABBITMQ_USERNAME:-admin}"
-      SPRING_RABBITMQ_PASSWORD: "$${SPRING_RABBITMQ_PASSWORD:-admin}"
-    restart: unless-stopped
+# Instala Docker Compose plugin
+sudo apt install -y docker-compose-plugin
+
+# instala client mysql pra teste
+sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+# Cria diretório da aplicação
+sudo mkdir -p /app/sql
+
+# Escreve SQL de inicialização
+cat << 'EOF_SQL' > /app/sql/init.sql
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+${init_sql_content}
+EOF_SQL
+
+# Escreve docker-compose
+cat << 'EOF_COMPOSE' > /app/docker-compose.yml
+${compose_backend}
 EOF_COMPOSE
 
-# Puxa imagens e sobe o compose de aplicação (conecta ao DB externo)
-sudo docker compose -f /app/docker-compose-app.yml pull || true
-sudo docker compose -f /app/docker-compose-app.yml up -d --remove-orphans
-      SPRING_RABBITMQ_HOST: ${db_host}
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: admin
-      SPRING_RABBITMQ_PASSWORD: admin
-    restart: unless-stopped
-EOF
+# Dá permissão
+sudo chmod 644 /app/docker-compose.yml
+sudo chmod 644 /app/sql/init.sql
 
-sudo docker compose up -d
+# Faz pull das imagens
+sudo docker compose -f /app/docker-compose.yml pull || true
+
+# Sobe containers
+sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans
+
+# Mostra status
+sudo docker ps -a

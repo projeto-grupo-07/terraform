@@ -90,17 +90,9 @@ resource "aws_security_group" "pri_sg" {
 
 resource "aws_security_group" "db_sg" {
   name        = "db-sg"
-  description = "Permite MySQL e RabbitMQ vindos do Backend"
+  description = "MySQL acessivel somente pelo backend privado"
   vpc_id      = module.vpc.vpc_id
 
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.pub_sg.id]
-  }
-
-  # MySQL
   ingress {
     from_port       = var.porta_mysql
     to_port         = var.porta_mysql
@@ -108,12 +100,11 @@ resource "aws_security_group" "db_sg" {
     security_groups = [aws_security_group.pri_sg.id]
   }
 
-  # RabbitMQ
   ingress {
-    from_port       = 5672
-    to_port         = 5672
+    from_port       = var.porta_ssh
+    to_port         = var.porta_ssh
     protocol        = "tcp"
-    security_groups = [aws_security_group.pri_sg.id]
+    security_groups = [aws_security_group.pub_sg.id]
   }
 
   egress {

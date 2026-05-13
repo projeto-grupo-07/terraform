@@ -1,41 +1,80 @@
 #!/bin/bash
-set -euxo pipefail
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Iniciando script de provisionamento"
 
-# Instalação do Docker (Script oficial)
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo systemctl enable docker
+# Atualiza os pacotes
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Atualizando pacotes..."
+sudo apt update && sudo apt upgrade -y
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Pacotes atualizados"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Instalando Docker e Docker Compose..."
+sudo apt-get install -y docker.io docker-compose
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Docker instalado"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Iniciando e habilitando serviço Docker..."
 sudo systemctl start docker
+sudo systemctl enable docker
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Docker iniciado e habilitado"
 
-# 1. Criamos a configuração que o seu Nginx interno vai usar
-mkdir -p /app/nginx
-cat << 'EOF' > /app/nginx/default.conf
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Adicionando usuário 'ubuntu' ao grupo docker..."
+sudo usermod -aG docker ubuntu
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Usuário 'ubuntu' adicionado ao grupo docker"
+
+PROJECT_DIR="/home/ubuntu/app"
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Criando diretório $PROJECT_DIR..."
+mkdir -p $PROJECT_DIR
+cd $PROJECT_DIR
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Diretório criado e movido para $PROJECT_DIR"
+
+# Cria o arquivo docker-compose.yml
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Escrevendo $PROJECT_DIR/docker-compose.yml..."
+cat << 'EOF_COMPOSE' > $PROJECT_DIR/docker-compose.yml
+${compose_frontend}
+EOF_COMPOSE
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] $PROJECT_DIR/docker-compose.yml criado"
+
+cat <<EOF > nginx.conf
 server {
     listen 80;
-    charset utf-8;
+    root /usr/share/nginx/html;
+    index index.html;
 
-    # Entrega os arquivos estáticos do seu React (que já estão na imagem)
     location / {
-        root   /usr/share/nginx/html;
-        index  index.html index.htm;
-        try_files $uri $uri/ /index.html;
+        try_files \$uri /index.html;
     }
 
-    # PROXY REVERSO: Envia as chamadas /api para o Load Balancer
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Redireciona chamadas de API para o Load Balancer do Backend
     location /api/ {
-        proxy_pass http://${alb_dns}/; 
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://${lb_dns_name}/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
+    location /lambda/ {
+        # O Nginx vai remover o "/lambda/" e passar o resto para o Gateway
+        # Ex: chamando /lambda/solicitar-relatorio vai para o Gateway/solicitar-relatorio
+        proxy_pass ${api_gateway_url}/; 
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        
+        # Importante para APIs da AWS (API Gateway exige o SNI correto)
+        proxy_ssl_server_name on;
     }
 }
 EOF
 
-# 2. Escreve o docker-compose do repositório e usa ele
-cat << 'EOF_COMPOSE' > /app/docker-compose.yml
-${compose_frontend}
-EOF_COMPOSE
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] nginx.conf criado"
 
-sudo docker compose -f /app/docker-compose.yml pull || true
-sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans
+
+# Sobe os contêineres
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Subindo contêineres com docker-compose ($PROJECT_DIR/docker-compose.yml)..."
+sudo docker-compose -f $PROJECT_DIR/docker-compose.yml up -d
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Contêineres subidos"
+
+sudo chown -R ubuntu:ubuntu $PROJECT_DIR
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Propriedades ajustadas para $PROJECT_DIR"

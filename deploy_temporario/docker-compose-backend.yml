@@ -1,24 +1,6 @@
 version: "3.8"
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: db_brink_calcados
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./sql:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
   rabbitmq:
     image: rabbitmq:3.10-management
     container_name: rabbitmq
@@ -41,8 +23,6 @@ services:
     image: guilhermefigueiredodocker/brinks-backend-prod:latest
     container_name: backend
     depends_on:
-      mysql:
-        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     ports:
@@ -50,9 +30,10 @@ services:
     environment:
       # Spring Profile
       SPRING_PROFILES_ACTIVE: prod
+      API_GATEWAY_URL: ${api_url}
       
       # Database (estes são usados pelo application-prod.properties)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/db_brink_calcados?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_URL: jdbc:mysql://${db_host}:3306/db_brink_calcados?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
@@ -106,5 +87,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
   rabbitmq_data:

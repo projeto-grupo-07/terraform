@@ -1,18 +1,100 @@
 #!/bin/bash
 set -euxo pipefail
 
-# Escreve o SQL de inicialização
+LOG=/var/log/db-deploy.log
+exec > >(tee -a "$LOG") 2>&1
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting DB deployment"
+trap 'echo "$(date "+%Y-%m-%d %H:%M:%S") - ERROR at line $LINENO"; exit 1' ERR
+
+# Dependências básicas
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Atualizando repositórios APT"
+sudo apt-get update -y
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando curl"
+sudo apt-get install -y curl
+
+# instala client mysql pra teste
+sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Aplicando upgrades APT"
+sudo apt update && sudo apt upgrade -y
+
+# Diretórios
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando diretórios em /app"
+sudo mkdir -p /app/sql
+sudo chown root:root /app -R
+sudo chmod 750 /app
+
+# Instala Docker
+if ! command -v docker >/dev/null 2>&1; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Docker não encontrado — instalando..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Docker já instalado"
+fi
+
+# Sobe Docker
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Habilitando e iniciando serviço Docker"
+sudo systemctl enable --now docker
+
+# Docker Compose plugin
+if ! docker compose version >/dev/null 2>&1; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando plugin docker-compose"
+    sudo apt-get install -y docker-compose-plugin
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Plugin docker compose já presente"
+fi
+
+# SQL init
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Escrevendo /app/sql/init.sql"
 cat << 'EOF_SQL' > /app/sql/init.sql
 SET NAMES utf8mb4;
 SET CHARACTER SET utf8mb4;
 ${init_sql_content}
 EOF_SQL
 
-# Escreve o docker-compose fornecido no repositório para /app/docker-compose.yml
+sudo chmod 777 /app/sql/init.sql
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Permissões definidas em /app/sql/init.sql"
+
+# Compose
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Escrevendo /app/docker-compose.yml"
 cat << 'EOF_COMPOSE' > /app/docker-compose.yml
 ${compose_backend}
 EOF_COMPOSE
 
-# Puxa imagens e sobe o compose (compose vindo do repositório)
-sudo docker compose -f /app/docker-compose.yml pull || true
-sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans
+sudo chmod 644 /app/docker-compose.yml
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Permissões definidas em /app/docker-compose.yml"
+
+# Retry helper
+run_with_retries() {
+    local -r cmd="$1"
+    local -r attempts=$${2:-5}
+    local -r delay=$${3:-5}
+    local i=1
+
+    until eval "$cmd"; do
+        if [ $i -ge $attempts ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - Command failed after $i attempts: $cmd"
+            return 1
+        fi
+
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Command failed (attempt $i). Retrying in $delay seconds..."
+        sleep $delay
+        i=$((i + 1))
+    done
+}
+
+# Pull imagens
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Pull das imagens"
+run_with_retries "sudo docker compose -f /app/docker-compose.yml pull" 5 10
+
+# Sobe stack
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Subindo stack com docker compose"
+run_with_retries "sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans" 5 10
+
+# Status final
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Estado final dos containers"
+sudo docker ps -a
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - DB deployment finished"
