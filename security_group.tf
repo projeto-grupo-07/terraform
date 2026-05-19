@@ -60,6 +60,13 @@ resource "aws_security_group" "pri_sg" {
   }
 
   ingress {
+    from_port       = 8081
+    to_port         = 8081
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  ingress {
     from_port       = var.porta_http
     to_port         = var.porta_http
     protocol        = "tcp"

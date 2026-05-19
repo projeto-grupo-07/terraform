@@ -71,6 +71,8 @@ services:
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: admin
       AWS_REGION: us-east-1
+      AWS_S3_BUCKET_TRUSTED: ${bucket_trusted}
+      AWS_S3_BUCKET_CLIENT: ${bucket_client}
     restart: unless-stopped
 
   ms-email:
