@@ -18,6 +18,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - internal                          # ← ADICIONADO
 
   backend:
     image: guilhermefigueiredodocker/brinks-backend-prod:latest
@@ -25,43 +27,38 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      ms-report-async:                    # ← ADICIONADO
+        condition: service_healthy        # ← ADICIONADO
     ports:
       - "8080:8080"
     environment:
-      # Spring Profile
       SPRING_PROFILES_ACTIVE: prod
       API_GATEWAY_URL: ${api_url}
-      
-      # Database (estes são usados pelo application-prod.properties)
+      MS_REPORT_URL: http://ms-report-async:8081
       SPRING_DATASOURCE_URL: jdbc:mysql://${db_host}:3306/db_brink_calcados?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
-      
-      # JWT - MÍNIMO 32 caracteres!
       JWT_SECRET: brink-calcados-super-secret-key-com-32-caracteres-ou-mais-2026
-      
-      # RabbitMQ
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: admin
-      
-      # JVM
-      JAVA_OPTS: "-Xmx512m -Xms256m"
-    
+      JAVA_TOOL_OPTIONS: "-Xmx512m -Xms256m"   # ← JAVA_OPTS → JAVA_TOOL_OPTIONS
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    
     restart: unless-stopped
+    networks:
+      - internal                          # ← ADICIONADO
 
   ms-report-async:
-    image: guilhermefigueiredodocker/brinks-ms-report
+    image: guilhermefigueiredodocker/brinks-ms-report:latest
     container_name: ms-report-async
+    # ports: removido — não precisa expor pro host, só comunicação interna
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -73,10 +70,18 @@ services:
       AWS_REGION: us-east-1
       AWS_S3_BUCKET_TRUSTED: ${bucket_trusted}
       AWS_S3_BUCKET_CLIENT: ${bucket_client}
+    healthcheck:                          # ← ADICIONADO
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
+    networks:
+      - internal                          # ← ADICIONADO
 
   ms-email:
-    image: guilhermefigueiredodocker/brinks-ms-email
+    image: guilhermefigueiredodocker/brinks-ms-email:latest
     container_name: ms-email
     depends_on:
       rabbitmq:
@@ -87,6 +92,12 @@ services:
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: admin
     restart: unless-stopped
+    networks:
+      - internal                          # ← ADICIONADO
 
 volumes:
   rabbitmq_data:
+
+networks:                                 # ← ADICIONADO
+  internal:
+    driver: bridge
