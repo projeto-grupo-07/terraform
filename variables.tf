@@ -67,3 +67,38 @@ variable "user_suffix" {
   description = "Identificador único por usuário"
   type        = string
 }
+
+variable "aws_access_key" {
+  description = "AWS access key (evite hardcoding; prefira perfil de instância)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "aws_secret_key" {
+  description = "AWS secret key (evite hardcoding; prefira perfil de instância)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "aws_session_token" {
+  description = "AWS session token (se usar credenciais temporárias)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gmail_user" {
+  description = "Conta Gmail para envio de e-mails (app password)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gmail_password" {
+  description = "Senha do Gmail ou app password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

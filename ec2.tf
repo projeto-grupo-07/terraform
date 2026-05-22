@@ -6,9 +6,18 @@ resource "aws_instance" "brinks-db" {
   vpc_security_group_ids      = [aws_security_group.db_sg.id]
   key_name                    = var.instance_key
 
-  user_data_base64 = base64encode(templatefile("${path.module}/deploy_temporario/database.sh.tftpl", {
-    init_sql_content = file("${path.module}/deploy_temporario/sql/init.sql"),
-    compose_backend  = file("${path.module}/deploy_temporario/docker-compose-db.yml")
+  user_data_base64 = base64gzip(templatefile("${path.module}/deploy_temporario/database.sh.tftpl", {
+    init_sql_content  = file("${path.module}/deploy_temporario/sql/init.sql"),
+    compose_backend   = file("${path.module}/deploy_temporario/docker-compose-db.yml")
+    backup_script     = templatefile("${path.module}/deploy_temporario/backup.sh.tftpl", {
+      user_suffix = var.user_suffix
+    })
+    aws_access_key    = var.aws_access_key
+    aws_secret_key    = var.aws_secret_key
+    aws_session_token = var.aws_session_token
+    gmail_user        = var.gmail_user
+    gmail_password    = var.gmail_password
+    cron_script       = file("${path.module}/deploy_temporario/cron.sh")
   }))
 
   depends_on = [module.vpc]
@@ -51,8 +60,7 @@ resource "aws_instance" "brinks-pri-1" {
       bucket_trusted = aws_s3_bucket.bucket_trusted.bucket,   # usa o nome criado pelo recurso S3
       bucket_client  = aws_s3_bucket.bucket_client.bucket    
     }),
-    init_sql_content = file("${path.module}/deploy_temporario/sql/init.sql")
-  })
+})
 
   depends_on = [module.vpc]
 
@@ -76,7 +84,6 @@ resource "aws_instance" "brinks-pri-2" {
       bucket_trusted = aws_s3_bucket.bucket_trusted.bucket,   # usa o nome criado pelo recurso S3
       bucket_client  = aws_s3_bucket.bucket_client.bucket
     }),
-    init_sql_content = file("${path.module}/deploy_temporario/sql/init.sql")
   })
 
   depends_on = [module.vpc]

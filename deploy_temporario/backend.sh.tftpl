@@ -1,54 +1,60 @@
 #!/bin/bash
 set -euxo pipefail
+exec > /var/log/user-data.log 2>&1
 
 # Atualiza sistema
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 
 # Instala dependências
-sudo apt install -y \
+apt install -y \
     ca-certificates \
     curl \
     gnupg \
-    lsb-release
+    lsb-release \
+    default-mysql-client
 
 # Instala Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+sh get-docker.sh
 
 # Habilita Docker
-sudo systemctl enable docker
-sudo systemctl start docker
+systemctl enable docker
+systemctl start docker
 
 # Instala Docker Compose plugin
-sudo apt install -y docker-compose-plugin
-
-# instala client mysql pra teste
-sudo apt-get update && sudo apt-get install -y default-mysql-client
+apt install -y docker-compose-plugin
 
 # Cria diretório da aplicação
-sudo mkdir -p /app/sql
-
-# Escreve SQL de inicialização
-cat << 'EOF_SQL' > /app/sql/init.sql
-SET NAMES utf8mb4;
-SET CHARACTER SET utf8mb4;
-${init_sql_content}
-EOF_SQL
+mkdir -p /app
 
 # Escreve docker-compose
 cat << 'EOF_COMPOSE' > /app/docker-compose.yml
 ${compose_backend}
 EOF_COMPOSE
 
-# Dá permissão
-sudo chmod 644 /app/docker-compose.yml
-sudo chmod 644 /app/sql/init.sql
+chmod 644 /app/docker-compose.yml
+
+# Aguarda Docker estar pronto
+echo "⏳ Aguardando Docker..."
+timeout 60 bash -c 'until docker info > /dev/null 2>&1; do sleep 2; done'
+echo "✅ Docker pronto"
 
 # Faz pull das imagens
-sudo docker compose -f /app/docker-compose.yml pull || true
+docker compose -f /app/docker-compose.yml pull || true
 
 # Sobe containers
-sudo docker compose -f /app/docker-compose.yml up -d --remove-orphans
+docker compose -f /app/docker-compose.yml up -d --remove-orphans
 
-# Mostra status
-sudo docker ps -a
+# Aguarda containers ficarem healthy
+echo "⏳ Aguardando containers ficarem healthy..."
+timeout 300 bash -c '
+  until [ "$(docker inspect --format="{{.State.Health.Status}}" backend 2>/dev/null)" = "healthy" ]; do
+    echo "Aguardando backend... $(date)"
+    sleep 10
+  done
+'
+echo "✅ Backend healthy!"
+
+# Status final
+docker ps -a
+docker compose -f /app/docker-compose.yml logs --tail=50

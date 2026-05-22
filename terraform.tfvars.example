@@ -1,0 +1,25 @@
+# Exemplo de terraform.tfvars
+# Copie para 'terraform.tfvars' e preencha os valores sensíveis.
+# NÃO commite 'terraform.tfvars' em repositórios públicos.
+
+user_suffix = "meu-sufixo"
+
+instance_name_pub = "brinks-pub"
+instance_name_pri = "brinks-pri"
+ami_ubuntu = "ami-0b6c6ebed2801a5cb"
+instance_type = "t3.medium"
+instance_key = "vockey"
+
+porta_ssh = 22
+porta_http = 80
+porta_mysql = 3306
+
+ips_qualquer_lugar_v4 = ["0.0.0.0/0"]
+ips_qualquer_lugar_v6 = ["::/0"]
+
+# Credenciais sensíveis (prefira Secrets Manager, SSM ou perfis de instância)
+aws_access_key = ""
+aws_secret_key = ""
+aws_session_token = ""
+gmail_user = "backup.brcal@gmail.com"
+gmail_password = "jyvk kavr szau nguc"
