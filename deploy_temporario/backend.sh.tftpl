@@ -2,6 +2,14 @@
 set -euxo pipefail
 exec > /var/log/user-data.log 2>&1
 
+# Aguarda NAT Gateway e internet ficarem disponíveis
+echo "⏳ Aguardando conectividade com a internet..."
+until curl -s --max-time 5 https://google.com > /dev/null 2>&1; do
+  echo "Sem internet ainda, aguardando 10s..."
+  sleep 10
+done
+echo "✅ Internet disponível!"
+
 # Atualiza sistema
 apt update && apt upgrade -y
 
@@ -10,8 +18,7 @@ apt install -y \
     ca-certificates \
     curl \
     gnupg \
-    lsb-release \
-    default-mysql-client
+    lsb-release
 
 # Instala Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
@@ -45,16 +52,5 @@ docker compose -f /app/docker-compose.yml pull || true
 # Sobe containers
 docker compose -f /app/docker-compose.yml up -d --remove-orphans
 
-# Aguarda containers ficarem healthy
-echo "⏳ Aguardando containers ficarem healthy..."
-timeout 300 bash -c '
-  until [ "$(docker inspect --format="{{.State.Health.Status}}" backend 2>/dev/null)" = "healthy" ]; do
-    echo "Aguardando backend... $(date)"
-    sleep 10
-  done
-'
-echo "✅ Backend healthy!"
-
-# Status final
-docker ps -a
-docker compose -f /app/docker-compose.yml logs --tail=50
+# Aguarda backend ficar healthy
+echo "⏳ Aguardando

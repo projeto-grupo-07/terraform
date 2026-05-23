@@ -44,6 +44,7 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: admin
       SPRING_RABBITMQ_PASSWORD: admin
+      GEMINI_API_KEY: AIzaSyC0xlVyHCqxZ0m7DqgCJZcmKN7Ib9n7ekM
       JAVA_TOOL_OPTIONS: "-Xmx512m -Xms256m"   # ← JAVA_OPTS → JAVA_TOOL_OPTIONS
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
