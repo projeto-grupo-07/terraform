@@ -19,7 +19,7 @@ variable "ami_ubuntu" {
 variable "instance_type" {
   description = "brinks EC2 instance's type"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "instance_key" {
