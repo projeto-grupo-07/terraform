@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euxo pipefail
 
+export DEBIAN_FRONTEND=noninteractive
+
 LOG=/var/log/db-deploy.log
 exec > >(tee -a "$LOG") 2>&1
 
@@ -10,14 +12,16 @@ trap 'echo "$(date "+%Y-%m-%d %H:%M:%S") - ERROR at line $LINENO"; exit 1' ERR
 # Dependências básicas
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Atualizando repositórios APT"
 sudo apt-get update -y
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando curl"
-sudo apt-get install -y curl
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando curl e unzip"
+sudo apt-get install -y curl unzip
 
 # instala client mysql pra teste
-sudo apt-get update && sudo apt-get install -y default-mysql-client
+sudo apt-get install -y default-mysql-client
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Aplicando upgrades APT"
-sudo apt update && sudo apt upgrade -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+  -o Dpkg::Options::="--force-confdef" \
+  -o Dpkg::Options::="--force-confold"
 
 # Diretórios
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando diretórios em /app"
@@ -97,40 +101,46 @@ run_with_retries "sudo docker compose -f /app/docker-compose.yml up -d --remove-
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Estado final dos containers"
 sudo docker ps -a
 
-
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Estado final dos containers"
-sudo docker ps -a
-
-# --- Integração do backup (cria script, credenciais e cron) ---
+# --- Integração do backup ---
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Integrando rotina de backup"
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando awscli e msmtp"
-sudo apt-get install -y awscli msmtp || true
 
+# Instala msmtp
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando msmtp"
+sudo apt-get install -y msmtp || true
+
+# Instala AWS CLI v2
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando AWS CLI v2"
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -o /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install --update
+
+# Cria script de backup
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando /backup e escrevendo script de backup"
 sudo mkdir -p /backup
-sudo chown ubuntu:ubuntu /backup -R || true
 cat << 'EOF_BACKUP' > /backup/backup.sh
 ${backup_script}
 EOF_BACKUP
 sudo chmod +x /backup/backup.sh
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando credenciais AWS em /home/ubuntu/.aws"
-sudo mkdir -p /home/ubuntu/.aws
-cat << EOF > /home/ubuntu/.aws/credentials
+# Credenciais AWS para root (cron roda como root)
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando credenciais AWS para root"
+sudo mkdir -p /root/.aws
+cat << EOF > /root/.aws/credentials
 [default]
 aws_access_key_id=${aws_access_key}
 aws_secret_access_key=${aws_secret_key}
 aws_session_token=${aws_session_token}
 EOF
-cat << EOF > /home/ubuntu/.aws/config
+cat << EOF > /root/.aws/config
 [default]
 region=us-east-1
 output=json
 EOF
-sudo chown -R ubuntu:ubuntu /home/ubuntu/.aws
+sudo chmod 600 /root/.aws/credentials /root/.aws/config
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando /home/ubuntu/.msmtprc"
-cat << EOF > /home/ubuntu/.msmtprc
+# msmtprc para root (cron roda como root)
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando /root/.msmtprc"
+cat << EOF > /root/.msmtprc
 defaults
 auth on
 tls on
@@ -145,9 +155,9 @@ password ${gmail_password}
 
 account default : gmail
 EOF
-sudo chmod 600 /home/ubuntu/.msmtprc
-sudo chown ubuntu:ubuntu /home/ubuntu/.msmtprc
+sudo chmod 600 /root/.msmtprc
 
+# Inicia cron
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Escrevendo cron e iniciando"
 cat << 'EOF_CRON' > /tmp/cron.sh
 ${cron_script}

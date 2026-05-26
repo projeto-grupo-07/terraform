@@ -1,45 +1,60 @@
 #!/bin/bash
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+exec >> /var/log/backup.log 2>&1
 
-sudo -e
+echo "==== Início do backup: $(date) ===="
 
-DB_CONTAINER="mysql"
+DB_CONTAINER="app-mysql-1"
 DB_NAME="db_brink_calcados"
 DB_USER="root"
 DB_PASSWORD="root"
 
 S3_BUCKET="brinks-bucket-backup-database-${user_suffix}"
 
+GMAIL_USER="${gmail_user}"
+GMAIL_PASSWORD="${gmail_password}"
+DEST_EMAIL="guilherme.figueiredo@sptech.school"
+
 BACKUP_DIR="/backup"
-
 DATE=$(date +%F)
-
 FILE_NAME="backup-$${DATE}.sql.gz"
-
 FILE_PATH="$${BACKUP_DIR}/$${FILE_NAME}"
 
 mkdir -p "$${BACKUP_DIR}"
 
-echo "Criando backup do banco de dados $${DATE}"
+docker ps | grep -q "$${DB_CONTAINER}" || {
+  echo "ERRO: Container $${DB_CONTAINER} não encontrado."
+  echo -e "Subject: ERRO BACKUP MYSQL\n\nContainer $${DB_CONTAINER} não encontrado em $${DATE}." \
+    | msmtp "$${DEST_EMAIL}"
+  exit 1
+}
 
-docker exec "$${DB_CONTAINER}" sh -c "exec mysqldump --databases $${DB_NAME} -u$${DB_USER} -p$${DB_PASSWORD}" | gzip > "$${FILE_PATH}"
+echo "Criando backup $${DATE}..."
 
-if [ $? -ne 0 ]; then
-  echo "Erro ao gerar backup." 
-  echo -e "Subject: ERRO BACKUP MYSQL\n\nFalha ao gerar backup." \
-| msmtp guilherme.figueiredo@sptech.school
+docker exec "$${DB_CONTAINER}" sh -c \
+  "MYSQL_PWD=$${DB_PASSWORD} mysqldump --databases $${DB_NAME} -u$${DB_USER}" \
+  | gzip > "$${FILE_PATH}"
+
+EXIT_CODE=$${PIPESTATUS[0]}
+if [ "$${EXIT_CODE}" -ne 0 ] || [ ! -s "$${FILE_PATH}" ]; then
+  echo "ERRO: Falha ao gerar backup."
+  echo -e "Subject: ERRO BACKUP MYSQL\n\nFalha ao gerar backup em $${DATE}." \
+    | msmtp "$${DEST_EMAIL}"
   exit 1
 fi
 
-echo "Backup criado com sucesso."
+echo "Backup criado: $${FILE_PATH}"
 
-aws s3 cp $FILE_PATH s3://$S3_BUCKET/
+aws s3 cp "$${FILE_PATH}" "s3://$${S3_BUCKET}/"
 
-if [ $? -ne 0 ]; then
-  echo "Erro ao enviar backup para S3."
+if [ $${PIPESTATUS[0]} -ne 0 ]; then
+  echo "ERRO: Falha ao enviar para S3."
+  echo -e "Subject: ERRO BACKUP S3\n\nFalha ao enviar backup para S3 em $${DATE}." \
+    | msmtp "$${DEST_EMAIL}"
   exit 1
 fi
 
-echo -e "Subject: BACKUP REALIZADO\n\nBackup $${DATE} concluido." \
-| msmtp guilherme.figueiredo@sptech.school
+echo -e "Subject: BACKUP REALIZADO\n\nBackup $${DATE} concluido com sucesso." \
+  | msmtp "$${DEST_EMAIL}"
 
-echo "Upload concluído."
+echo "==== Backup concluído: $(date) ===="

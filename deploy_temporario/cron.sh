@@ -1,30 +1,47 @@
 #!/bin/bash
 
-set -e
-
 sleep 60
 
-sudo apt update
-sudo apt install -y cron
+apt-get update -y
+apt-get install -y cron msmtp msmtp-mta
 
-sudo systemctl enable cron
-sudo systemctl start cron
+# Configura msmtp globalmente
+cat > /etc/msmtprc <<EOF
+defaults
+auth           on
+tls            on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile        /var/log/msmtp.log
 
-USUARIO="ubuntu"
+account        gmail
+host           smtp.gmail.com
+port           587
+from           ${gmail_user}
+user           ${gmail_user}
+password       ${gmail_password}
+
+account default : gmail
+EOF
+
+chmod 644 /etc/msmtprc
+
+systemctl enable cron
+systemctl start cron
+
 ARQUIVO_SCRIPT="/backup/backup.sh"
-ARQUIVO_LOG="/var/log/backup_diario_cron.log"
+LOG_BACKUP="/var/log/backup.log"
 
-sudo touch $ARQUIVO_LOG
-sudo chmod 666 $ARQUIVO_LOG
+touch $LOG_BACKUP
+chmod 666 $LOG_BACKUP
 
-CRON_JOB="0 02 * * * sh $ARQUIVO_SCRIPT >> $ARQUIVO_LOG 2>&1"
+chmod +x $ARQUIVO_SCRIPT
 
-echo "cron job criado:"
-echo "$CRON_JOB"
+CRON_JOB="* * * * * root bash $ARQUIVO_SCRIPT"
 
-echo "$CRON_JOB" | sudo tee /var/spool/cron/crontabs/ubuntu > /dev/null
+echo "$CRON_JOB" > /etc/cron.d/backup-mysql
+chown root:root /etc/cron.d/backup-mysql
+chmod 644 /etc/cron.d/backup-mysql
 
-sudo chown ubuntu:crontab /var/spool/cron/crontabs/ubuntu
-sudo chmod 600 /var/spool/cron/crontabs/ubuntu
+systemctl restart cron
 
-sudo systemctl restart cron
+echo "Cron e msmtp configurados com sucesso."

@@ -11,6 +11,8 @@ resource "aws_instance" "brinks-db" {
     compose_backend   = file("${path.module}/deploy_temporario/docker-compose-db.yml")
     backup_script     = templatefile("${path.module}/deploy_temporario/backup.sh.tftpl", {
       user_suffix = var.user_suffix
+      gmail_user     = var.gmail_user
+      gmail_password = var.gmail_password
     })
     aws_access_key    = var.aws_access_key
     aws_secret_key    = var.aws_secret_key
