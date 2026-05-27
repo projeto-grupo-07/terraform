@@ -36,7 +36,7 @@ chmod 666 $LOG_BACKUP
 
 chmod +x $ARQUIVO_SCRIPT
 
-CRON_JOB="* * * * * root bash $ARQUIVO_SCRIPT"
+CRON_JOB="0 2 * * * root bash $ARQUIVO_SCRIPT"
 
 echo "$CRON_JOB" > /etc/cron.d/backup-mysql
 chown root:root /etc/cron.d/backup-mysql
