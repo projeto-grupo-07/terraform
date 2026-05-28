@@ -9,6 +9,13 @@ exec > >(tee -a "$LOG") 2>&1
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting DB deployment"
 trap 'echo "$(date "+%Y-%m-%d %H:%M:%S") - ERROR at line $LINENO"; exit 1' ERR
 
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Aguardando conectividade com a internet..."
+until curl -sf --max-time 5 http://archive.ubuntu.com > /dev/null 2>&1; do
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - Sem conectividade ainda, aguardando 15s..."
+  sleep 15
+done
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Conectividade OK"
+
 # Dependências básicas
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Atualizando repositórios APT"
 sudo apt-get update -y
@@ -19,7 +26,7 @@ sudo apt-get install -y curl unzip
 sudo apt-get install -y default-mysql-client
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Aplicando upgrades APT"
-sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --fix-missing\
   -o Dpkg::Options::="--force-confdef" \
   -o Dpkg::Options::="--force-confold"
 
