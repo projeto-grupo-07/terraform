@@ -1,3 +1,23 @@
+resource "aws_s3_bucket" "grafana_bucket" {
+  bucket        = "brinks-grafana-${var.user_suffix}"
+  force_destroy = true  # permite destruir mesmo com arquivos dentro
+}
+
+# FAZ O UPLOAD AUTOMÁTICO DO JSON A CADA APPLY
+resource "aws_s3_object" "dashboard_infra" {
+  bucket = aws_s3_bucket.grafana_bucket.bucket
+  key    = "brinks-infra.json"
+  source = "${path.module}/deploy_temporario/brinks-infra.json"
+  etag   = filemd5("${path.module}/deploy_temporario/brinks-infra.json")
+}
+
+resource "aws_s3_object" "dashboard_analytics" {
+  bucket = aws_s3_bucket.grafana_bucket.bucket
+  key    = "brinks-analytics.json"
+  source = "${path.module}/deploy_temporario/brinks-analytics.json"
+  etag   = filemd5("${path.module}/deploy_temporario/brinks-analytics.json")
+}
+
 resource "aws_instance" "brinks-db" {
   ami                         = var.ami_ubuntu
   instance_type               = var.instance_type
@@ -24,6 +44,7 @@ resource "aws_instance" "brinks-db" {
 
   depends_on = [module.vpc]
 
+ iam_instance_profile = "LabInstanceProfile" 
   tags = { Name = "brinks-db-server" }
 }
 
@@ -34,11 +55,14 @@ resource "aws_instance" "brinks-pub-1" {
   vpc_security_group_ids      = [aws_security_group.pub_sg.id]
   associate_public_ip_address = true
   key_name                    = var.instance_key
+  iam_instance_profile        = "LabInstanceProfile"
 
   user_data = templatefile("${path.module}/deploy_temporario/frontend.sh.tftpl", {
     lb_dns_name      = aws_lb.brinks_alb.dns_name,
     compose_frontend = file("${path.module}/deploy_temporario/docker-compose-frontend.yml"),
-    api_gateway_url  = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio"
+    api_gateway_url  = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio",
+    user_suffix      = var.user_suffix
+    db_host          = aws_instance.brinks-db.private_ip 
   })
 
   tags = {

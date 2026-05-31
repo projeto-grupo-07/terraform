@@ -176,4 +176,97 @@ EOF_CRON
 sudo chmod +x /tmp/cron.sh
 nohup bash /tmp/cron.sh > /tmp/cron-init.log 2>&1 &
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') - DB deployment finished"
+# Define o hostname com o nome da tag Name da instância
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+INSTANCE_NAME=$(aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --region us-east-1 \
+  --query 'Reservations[0].Instances[0].Tags[?Key==`Name`].Value' \
+  --output text)
+
+if [ -n "$INSTANCE_NAME" ]; then
+  hostnamectl set-hostname $INSTANCE_NAME
+  echo "Hostname definido como: $INSTANCE_NAME"
+fi
+
+# ============================================================
+# HOSTNAME COM NOME DA TAG (IMDSv2)
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] Definindo hostname com nome da tag..."
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+INSTANCE_NAME=$(aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --region us-east-1 \
+  --query 'Reservations[0].Instances[0].Tags[?Key==`Name`].Value' \
+  --output text)
+if [ -n "$INSTANCE_NAME" ]; then
+  sudo hostnamectl set-hostname $INSTANCE_NAME
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] Hostname definido como: $INSTANCE_NAME"
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] AVISO: Nome da tag não encontrado"
+fi
+# ============================================================
+# CLOUDWATCH AGENT
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [cwagent] Instalando CloudWatch Agent..."
+wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+CURRENT_HOSTNAME=$(hostname)
+
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << EOF_CW
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "CWAgent",
+    "append_dimensions": {
+      "InstanceId": "$${aws:InstanceId}",
+      "host": "$CURRENT_HOSTNAME"
+    },
+    "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_active", "cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+        "metrics_collection_interval": 60,
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": ["used_percent", "free", "total"],
+        "metrics_collection_interval": 60,
+        "resources": ["/"]
+      },
+      "diskio": {
+        "measurement": ["reads", "writes", "read_bytes", "write_bytes"],
+        "metrics_collection_interval": 60,
+        "resources": ["*"]
+      },
+      "net": {
+        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"],
+        "metrics_collection_interval": 60,
+        "resources": ["eth0"]
+      }
+    }
+  }
+}
+EOF_CW
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+systemctl enable amazon-cloudwatch-agent
+systemctl start amazon-cloudwatch-agent
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [cwagent] CloudWatch Agent iniciado"
+echo "$(date '+%Y-%m-%d %H:%M:%S') [database] Provisionamento concluído"

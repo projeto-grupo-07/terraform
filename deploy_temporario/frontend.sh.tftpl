@@ -1,38 +1,55 @@
 #!/bin/bash
 echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Iniciando script de provisionamento"
 
-# Atualiza os pacotes
 echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Atualizando pacotes..."
 sudo apt update && sudo apt upgrade -y
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Pacotes atualizados"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Instalando Docker e Docker Compose..."
-sudo apt-get install -y docker.io docker-compose
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Docker instalado"
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Instalando dependências..."
+sudo apt-get install -y docker.io docker-compose wget unzip curl python3
+
+# ============================================================
+# AWS CLI v2
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [awscli] Instalando AWS CLI v2..."
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -o /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install --update
+echo "$(date '+%Y-%m-%d %H:%M:%S') [awscli] AWS CLI instalado: $(aws --version)"
+
+# ============================================================
+# HOSTNAME COM NOME DA TAG (IMDSv2)
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] Definindo hostname com nome da tag..."
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+INSTANCE_NAME=$(aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --region us-east-1 \
+  --query 'Reservations[0].Instances[0].Tags[?Key==`Name`].Value' \
+  --output text)
+if [ -n "$INSTANCE_NAME" ]; then
+  sudo hostnamectl set-hostname $INSTANCE_NAME
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] Hostname definido como: $INSTANCE_NAME"
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [hostname] AVISO: Nome da tag não encontrado"
+fi
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Iniciando e habilitando serviço Docker..."
 sudo systemctl start docker
 sudo systemctl enable docker
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Docker iniciado e habilitado"
-
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Adicionando usuário 'ubuntu' ao grupo docker..."
 sudo usermod -aG docker ubuntu
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Usuário 'ubuntu' adicionado ao grupo docker"
 
 PROJECT_DIR="/home/ubuntu/app"
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Criando diretório $PROJECT_DIR..."
 mkdir -p $PROJECT_DIR
 cd $PROJECT_DIR
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Diretório criado e movido para $PROJECT_DIR"
 
-# Cria o arquivo docker-compose.yml
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Escrevendo $PROJECT_DIR/docker-compose.yml..."
 cat << 'EOF_COMPOSE' > $PROJECT_DIR/docker-compose.yml
 ${compose_frontend}
 EOF_COMPOSE
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] $PROJECT_DIR/docker-compose.yml criado"
 
-cat <<EOF > nginx.conf
+cat <<EOF > $PROJECT_DIR/nginx.conf
 server {
     listen 80;
     root /usr/share/nginx/html;
@@ -47,7 +64,6 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Redireciona chamadas de API para o Load Balancer do Backend
     location /api/ {
         proxy_pass http://${lb_dns_name}/;
         proxy_set_header Host \$host;
@@ -56,25 +72,286 @@ server {
     }
 
     location /lambda/ {
-        # O Nginx vai remover o "/lambda/" e passar o resto para o Gateway
-        # Ex: chamando /lambda/solicitar-relatorio vai para o Gateway/solicitar-relatorio
-        proxy_pass ${api_gateway_url}/; 
+        proxy_pass ${api_gateway_url}/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        
-        # Importante para APIs da AWS (API Gateway exige o SNI correto)
         proxy_ssl_server_name on;
     }
 }
 EOF
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] nginx.conf criado"
-
-
-# Sobe os contêineres
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Subindo contêineres com docker-compose ($PROJECT_DIR/docker-compose.yml)..."
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Subindo contêineres frontend..."
 sudo docker-compose -f $PROJECT_DIR/docker-compose.yml up -d
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Contêineres subidos"
-
 sudo chown -R ubuntu:ubuntu $PROJECT_DIR
-echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Propriedades ajustadas para $PROJECT_DIR"
+
+# ============================================================
+# GRAFANA
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Criando volume persistente..."
+sudo docker volume create grafana-storage
+
+mkdir -p /etc/grafana/provisioning/datasources
+cat > /etc/grafana/provisioning/datasources/cloudwatch.yaml << 'EOF_DS'
+apiVersion: 1
+
+datasources:
+  - name: CloudWatch
+    type: cloudwatch
+    uid: cloudwatch-brinks
+    access: proxy
+    isDefault: true
+    jsonData:
+      authType: default
+      defaultRegion: us-east-1
+    version: 1
+    editable: false
+
+  - name: MySQL
+    type: mysql
+    uid: mysql-brinks
+    url: ${db_host}:3306
+    database: db_brink_calcados
+    user: grafana
+    secureJsonData:
+      password: grafana123
+    jsonData:
+      maxOpenConns: 10
+      maxIdleConns: 10
+      connMaxLifetime: 14400
+    version: 1
+    editable: false
+EOF_DS
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Subindo container Grafana na porta 3000..."
+sudo docker run -d \
+  --name grafana \
+  --restart always \
+  -p 3000:3000 \
+  -v grafana-storage:/var/lib/grafana \
+  -v /etc/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources \
+  grafana/grafana
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Aguardando Grafana iniciar..."
+until curl -s http://localhost:3000/api/health | grep -q '"database": "ok"'; do
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Ainda iniciando, aguardando 5s..."
+  sleep 5
+done
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Grafana pronto!"
+
+# ============================================================
+# DASHBOARD INFRA (CloudWatch)
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Baixando dashboard infra do S3..."
+aws s3 cp s3://brinks-grafana-${user_suffix}/brinks-infra.json /tmp/brinks-infra.json
+
+python3 << 'EOF_PY'
+import json
+
+with open('/tmp/brinks-infra.json') as f:
+    db = json.load(f)
+
+order = [
+    item['spec']['element']['name']
+    for item in db.get('layout', {}).get('spec', {}).get('items', [])
+]
+
+elements = db.get('elements', {})
+panels = []
+x, y = 0, 0
+
+for name in order:
+    element = elements.get(name, {})
+    spec = element.get('spec', {})
+    viz = spec.get('vizConfig', {}).get('spec', {})
+    queries = spec.get('data', {}).get('spec', {}).get('queries', [])
+
+    targets = []
+    for q in queries:
+        qspec = q.get('spec', {}).get('query', {}).get('spec', {})
+        targets.append({
+            "refId": q.get('spec', {}).get('refId', 'A'),
+            "queryMode": "Metrics",
+            "metricQueryType": 0,
+            "metricEditorMode": 1,
+            "expression": qspec.get('expression', ''),
+            "region": "default",
+            "datasource": {"type": "cloudwatch", "uid": "cloudwatch-brinks"}
+        })
+
+    panel = {
+        "id": spec.get('id'),
+        "title": spec.get('title', ''),
+        "description": spec.get('description', ''),
+        "type": spec.get('vizConfig', {}).get('group', 'timeseries'),
+        "targets": targets,
+        "fieldConfig": viz.get('fieldConfig', {"defaults": {}, "overrides": []}),
+        "options": viz.get('options', {}),
+        "gridPos": {"h": 8, "w": 12, "x": x, "y": y}
+    }
+    panels.append(panel)
+    x = 12 if x == 0 else 0
+    if x == 0:
+        y += 8
+
+v1 = {
+    "id": None,
+    "uid": "brinks-infra",
+    "title": db.get('title', 'BrinkCalçados — visão de infraestrutura'),
+    "tags": [],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 0,
+    "panels": panels,
+    "time": {"from": "now-1h", "to": "now"},
+    "refresh": "1m"
+}
+
+with open('/tmp/payload_infra.json', 'w') as f:
+    json.dump({"dashboard": v1, "overwrite": True, "folderId": 0}, f)
+
+print("Infra painéis convertidos:", len(panels))
+EOF_PY
+
+RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
+  -H 'Content-Type: application/json' \
+  -d @/tmp/payload_infra.json)
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Infra: $RESULT"
+
+# ============================================================
+# DASHBOARD ANALYTICS (MySQL) — GridLayout
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Baixando dashboard analytics do S3..."
+aws s3 cp s3://brinks-grafana-${user_suffix}/brinks-analytics.json /tmp/brinks-analytics.json
+
+python3 << 'EOF_PY2'
+import json
+
+with open('/tmp/brinks-analytics.json') as f:
+    db = json.load(f)
+
+# GridLayout — pega posição x,y,w,h de cada item
+items = db.get('layout', {}).get('spec', {}).get('items', [])
+elements = db.get('elements', {})
+panels = []
+
+for item in items:
+    item_spec = item.get('spec', {})
+    name = item_spec.get('element', {}).get('name', '')
+    element = elements.get(name, {})
+    spec = element.get('spec', {})
+    viz = spec.get('vizConfig', {}).get('spec', {})
+    queries = spec.get('data', {}).get('spec', {}).get('queries', [])
+
+    targets = []
+    for q in queries:
+        qspec = q.get('spec', {}).get('query', {}).get('spec', {})
+        targets.append({
+            "refId": q.get('spec', {}).get('refId', 'A'),
+            "rawSql": qspec.get('rawSql', ''),
+            "format": qspec.get('format', 'table'),
+            "datasource": {"type": "mysql", "uid": "mysql-brinks"}
+        })
+
+    panel = {
+        "id": spec.get('id'),
+        "title": spec.get('title', ''),
+        "description": spec.get('description', ''),
+        "type": spec.get('vizConfig', {}).get('group', 'barchart'),
+        "targets": targets,
+        "fieldConfig": viz.get('fieldConfig', {"defaults": {}, "overrides": []}),
+        "options": viz.get('options', {}),
+        "gridPos": {
+            "h": item_spec.get('height', 8),
+            "w": item_spec.get('width', 12),
+            "x": item_spec.get('x', 0),
+            "y": item_spec.get('y', 0)
+        }
+    }
+    panels.append(panel)
+
+v1 = {
+    "id": None,
+    "uid": "brinks-analytics",
+    "title": db.get('title', 'BrinkCalçados — análise comercial'),
+    "tags": [],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 0,
+    "panels": panels,
+    "time": {"from": "now-6h", "to": "now"},
+    "refresh": ""
+}
+
+with open('/tmp/payload_analytics.json', 'w') as f:
+    json.dump({"dashboard": v1, "overwrite": True, "folderId": 0}, f)
+
+print("Analytics painéis convertidos:", len(panels))
+EOF_PY2
+
+RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
+  -H 'Content-Type: application/json' \
+  -d @/tmp/payload_analytics.json)
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Analytics: $RESULT"
+
+# ============================================================
+# CLOUDWATCH AGENT
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [cwagent] Instalando CloudWatch Agent..."
+wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+dpkg -i -E ./amazon-cloudwatch-agent.deb
+
+CURRENT_HOSTNAME=$(hostname)
+
+sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << EOF
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "metrics": {
+    "namespace": "CWAgent",
+    "append_dimensions": {
+      "InstanceId": "$INSTANCE_ID",
+      "host": "$CURRENT_HOSTNAME"
+    },
+    "metrics_collected": {
+      "cpu": {
+        "measurement": ["cpu_usage_active", "cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+        "metrics_collection_interval": 60,
+        "totalcpu": true
+      },
+      "mem": {
+        "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+        "metrics_collection_interval": 60
+      },
+      "disk": {
+        "measurement": ["used_percent", "free", "total"],
+        "metrics_collection_interval": 60,
+        "resources": ["/"]
+      },
+      "diskio": {
+        "measurement": ["reads", "writes", "read_bytes", "write_bytes"],
+        "metrics_collection_interval": 60,
+        "resources": ["*"]
+      },
+      "net": {
+        "measurement": ["bytes_recv", "bytes_sent", "packets_recv", "packets_sent"],
+        "metrics_collection_interval": 60,
+        "resources": ["eth0"]
+      }
+    }
+  }
+}
+EOF
+
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+systemctl enable amazon-cloudwatch-agent
+systemctl start amazon-cloudwatch-agent
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [cwagent] CloudWatch Agent iniciado"
+echo "$(date '+%Y-%m-%d %H:%M:%S') [frontend] Provisionamento concluído"
