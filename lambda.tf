@@ -11,8 +11,8 @@ resource "aws_lambda_function" "lambda_raw" {
 
   environment {
     variables = {
-      S3_BUCKET   = aws_s3_bucket.bucket_raw.bucket
-      S3_PREFIX   = "importacao" # Aspas adicionadas        # Aspas adicionadas (Terraform exige string) isso vai mudar
+      S3_BUCKET = aws_s3_bucket.bucket_raw.bucket
+      S3_PREFIX = "importacao" # Aspas adicionadas        # Aspas adicionadas (Terraform exige string) isso vai mudar
     }
   }
 
@@ -21,7 +21,7 @@ resource "aws_lambda_function" "lambda_raw" {
 
 resource "aws_lambda_function_url" "lambda_raw_url" {
   function_name      = aws_lambda_function.lambda_raw.function_name
-  authorization_type = "AWS_IAM" 
+  authorization_type = "AWS_IAM"
 
   cors {
     allow_origins = ["*"]

@@ -1,6 +1,6 @@
 resource "aws_s3_bucket" "grafana_bucket" {
   bucket        = "brinks-grafana-${var.user_suffix}"
-  force_destroy = true  # permite destruir mesmo com arquivos dentro
+  force_destroy = true # permite destruir mesmo com arquivos dentro
 }
 
 # FAZ O UPLOAD AUTOMÁTICO DO JSON A CADA APPLY
@@ -27,10 +27,11 @@ resource "aws_instance" "brinks-db" {
   key_name                    = var.instance_key
 
   user_data_base64 = base64gzip(templatefile("${path.module}/deploy_temporario/database.sh.tftpl", {
-    init_sql_content  = file("${path.module}/deploy_temporario/sql/init.sql"),
-    compose_backend   = file("${path.module}/deploy_temporario/docker-compose-db.yml")
-    backup_script     = templatefile("${path.module}/deploy_temporario/backup.sh.tftpl", {
-      user_suffix = var.user_suffix
+    user_suffix      = var.user_suffix
+    init_sql_content = file("${path.module}/deploy_temporario/sql/init.sql"),
+    compose_backend  = file("${path.module}/deploy_temporario/docker-compose-db.yml")
+    backup_script = templatefile("${path.module}/deploy_temporario/backup.sh.tftpl", {
+      user_suffix    = var.user_suffix
       gmail_user     = var.gmail_user
       gmail_password = var.gmail_password
     })
@@ -44,8 +45,8 @@ resource "aws_instance" "brinks-db" {
 
   depends_on = [module.vpc]
 
- iam_instance_profile = "LabInstanceProfile" 
-  tags = { Name = "brinks-db-server" }
+  iam_instance_profile = "LabInstanceProfile"
+  tags                 = { Name = "brinks-db-server" }
 }
 
 resource "aws_instance" "brinks-pub-1" {
@@ -62,7 +63,7 @@ resource "aws_instance" "brinks-pub-1" {
     compose_frontend = file("${path.module}/deploy_temporario/docker-compose-frontend.yml"),
     api_gateway_url  = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio",
     user_suffix      = var.user_suffix
-    db_host          = aws_instance.brinks-db.private_ip 
+    db_host          = aws_instance.brinks-db.private_ip
   })
 
   tags = {
@@ -81,12 +82,12 @@ resource "aws_instance" "brinks-pri-1" {
 
   user_data = templatefile("${path.module}/deploy_temporario/backend.sh.tftpl", {
     compose_backend = templatefile("${path.module}/deploy_temporario/docker-compose-backend.yml", {
-      api_url = aws_apigatewayv2_stage.lambda_stage.invoke_url,
-      db_host = aws_instance.brinks-db.private_ip
-      bucket_trusted = aws_s3_bucket.bucket_trusted.bucket,   # usa o nome criado pelo recurso S3
-      bucket_client  = aws_s3_bucket.bucket_client.bucket    
+      api_url        = aws_apigatewayv2_stage.lambda_stage.invoke_url,
+      db_host        = aws_instance.brinks-db.private_ip
+      bucket_trusted = aws_s3_bucket.bucket_trusted.bucket, # usa o nome criado pelo recurso S3
+      bucket_client  = aws_s3_bucket.bucket_client.bucket
     }),
-})
+  })
 
   depends_on = [module.vpc]
 
@@ -105,14 +106,16 @@ resource "aws_instance" "brinks-pri-2" {
   user_data = templatefile("${path.module}/deploy_temporario/backend.sh.tftpl", {
     # exemplo de passagem no templatefile (em ec2.tf para brinks-pri)
     compose_backend = templatefile("${path.module}/deploy_temporario/docker-compose-backend.yml", {
-      api_url = aws_apigatewayv2_stage.lambda_stage.invoke_url,
-      db_host = aws_instance.brinks-db.private_ip
-      bucket_trusted = aws_s3_bucket.bucket_trusted.bucket,   # usa o nome criado pelo recurso S3
+      api_url        = aws_apigatewayv2_stage.lambda_stage.invoke_url,
+      db_host        = aws_instance.brinks-db.private_ip
+      bucket_trusted = aws_s3_bucket.bucket_trusted.bucket, # usa o nome criado pelo recurso S3
       bucket_client  = aws_s3_bucket.bucket_client.bucket
     }),
   })
 
-  depends_on = [module.vpc]
+  depends_on = [
+    module.vpc,
+  ]
 
   iam_instance_profile = "LabInstanceProfile"
 

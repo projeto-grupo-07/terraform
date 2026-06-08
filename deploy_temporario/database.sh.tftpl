@@ -30,6 +30,28 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --fix-missing\
   -o Dpkg::Options::="--force-confdef" \
   -o Dpkg::Options::="--force-confold"
 
+# Instala AWS CLI v2 (Antecipado para o download do S3 funcionar)
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando AWS CLI v2"
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -o /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install --update
+
+# Credenciais AWS para root (Antecipado para o download do S3 funcionar)
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando credenciais AWS para root"
+sudo mkdir -p /root/.aws
+cat << EOF > /root/.aws/credentials
+[default]
+aws_access_key_id=${aws_access_key}
+aws_secret_access_key=${aws_secret_key}
+aws_session_token=${aws_session_token}
+EOF
+cat << EOF > /root/.aws/config
+[default]
+region=us-east-1
+output=json
+EOF
+sudo chmod 600 /root/.aws/credentials /root/.aws/config
+
 # Diretórios
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando diretórios em /app"
 sudo mkdir -p /app/sql
@@ -119,12 +141,6 @@ echo "msmtp msmtp/apparmor boolean true" | sudo debconf-set-selections
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando msmtp"
 sudo apt-get install -y msmtp || true
 
-# Instala AWS CLI v2
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Instalando AWS CLI v2"
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-unzip -o /tmp/awscliv2.zip -d /tmp
-sudo /tmp/aws/install --update
-
 # Cria script de backup
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando /backup e escrevendo script de backup"
 sudo mkdir -p /backup
@@ -132,22 +148,6 @@ cat << 'EOF_BACKUP' > /backup/backup.sh
 ${backup_script}
 EOF_BACKUP
 sudo chmod +x /backup/backup.sh
-
-# Credenciais AWS para root (cron roda como root)
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando credenciais AWS para root"
-sudo mkdir -p /root/.aws
-cat << EOF > /root/.aws/credentials
-[default]
-aws_access_key_id=${aws_access_key}
-aws_secret_access_key=${aws_secret_key}
-aws_session_token=${aws_session_token}
-EOF
-cat << EOF > /root/.aws/config
-[default]
-region=us-east-1
-output=json
-EOF
-sudo chmod 600 /root/.aws/credentials /root/.aws/config
 
 # msmtprc para root (cron roda como root)
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Criando /root/.msmtprc"

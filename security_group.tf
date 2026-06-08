@@ -24,13 +24,13 @@ resource "aws_security_group" "pub_sg" {
   description = "Permite SSH e HTTP externos"
   vpc_id      = module.vpc.vpc_id
 
-ingress {
-  from_port        = 3000
-  to_port          = 3000
-  protocol         = "tcp"
-  cidr_blocks      = var.ips_qualquer_lugar_v4
-  ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
-}
+  ingress {
+    from_port        = 3000
+    to_port          = 3000
+    protocol         = "tcp"
+    cidr_blocks      = var.ips_qualquer_lugar_v4
+    ipv6_cidr_blocks = var.ips_qualquer_lugar_v6
+  }
   ingress {
     from_port        = var.porta_ssh
     to_port          = var.porta_ssh
@@ -107,13 +107,13 @@ resource "aws_security_group" "db_sg" {
   description = "MySQL acessivel somente pelo backend privado"
   vpc_id      = module.vpc.vpc_id
 
-ingress {
-  from_port       = var.porta_mysql
-  to_port         = var.porta_mysql
-  protocol        = "tcp"
-  security_groups = [aws_security_group.pub_sg.id]
-  description     = "Grafana acessa MySQL para dashboards"
-}
+  ingress {
+    from_port       = var.porta_mysql
+    to_port         = var.porta_mysql
+    protocol        = "tcp"
+    security_groups = [aws_security_group.pub_sg.id]
+    description     = "Grafana acessa MySQL para dashboards"
+  }
   ingress {
     from_port       = var.porta_mysql
     to_port         = var.porta_mysql

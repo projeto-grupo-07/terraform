@@ -494,5 +494,13 @@ ALTER TABLE pagamento_comissao
   ADD CONSTRAINT fk_pagamento_vendedor FOREIGN KEY (fk_vendedor) REFERENCES funcionario(id);
 
 -- ============================
+-- USUÁRIO GRAFANA (leitura)
+-- ============================
+CREATE USER IF NOT EXISTS 'grafana'@'%' IDENTIFIED BY 'grafana123';
+GRANT SELECT ON db_brink_calcados.* TO 'grafana'@'%';
+FLUSH PRIVILEGES;
+
+
+-- ============================
 -- SCRIPT finalizado
 -- ============================

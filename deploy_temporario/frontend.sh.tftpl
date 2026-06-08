@@ -139,7 +139,7 @@ done
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Grafana pronto!"
 
 # ============================================================
-# DASHBOARD INFRA (CloudWatch)
+# DASHBOARD INFRA (CloudWatch) — formato v2 com elements/layout
 # ============================================================
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Baixando dashboard infra do S3..."
 aws s3 cp s3://brinks-grafana-${user_suffix}/brinks-infra.json /tmp/brinks-infra.json
@@ -218,7 +218,7 @@ RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Infra: $RESULT"
 
 # ============================================================
-# DASHBOARD ANALYTICS (MySQL) — GridLayout
+# DASHBOARD ANALYTICS (MySQL) — formato v1 com panels direto
 # ============================================================
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Baixando dashboard analytics do S3..."
 aws s3 cp s3://brinks-grafana-${user_suffix}/brinks-analytics.json /tmp/brinks-analytics.json
@@ -229,63 +229,13 @@ import json
 with open('/tmp/brinks-analytics.json') as f:
     db = json.load(f)
 
-# GridLayout — pega posição x,y,w,h de cada item
-items = db.get('layout', {}).get('spec', {}).get('items', [])
-elements = db.get('elements', {})
-panels = []
-
-for item in items:
-    item_spec = item.get('spec', {})
-    name = item_spec.get('element', {}).get('name', '')
-    element = elements.get(name, {})
-    spec = element.get('spec', {})
-    viz = spec.get('vizConfig', {}).get('spec', {})
-    queries = spec.get('data', {}).get('spec', {}).get('queries', [])
-
-    targets = []
-    for q in queries:
-        qspec = q.get('spec', {}).get('query', {}).get('spec', {})
-        targets.append({
-            "refId": q.get('spec', {}).get('refId', 'A'),
-            "rawSql": qspec.get('rawSql', ''),
-            "format": qspec.get('format', 'table'),
-            "datasource": {"type": "mysql", "uid": "mysql-brinks"}
-        })
-
-    panel = {
-        "id": spec.get('id'),
-        "title": spec.get('title', ''),
-        "description": spec.get('description', ''),
-        "type": spec.get('vizConfig', {}).get('group', 'barchart'),
-        "targets": targets,
-        "fieldConfig": viz.get('fieldConfig', {"defaults": {}, "overrides": []}),
-        "options": viz.get('options', {}),
-        "gridPos": {
-            "h": item_spec.get('height', 8),
-            "w": item_spec.get('width', 12),
-            "x": item_spec.get('x', 0),
-            "y": item_spec.get('y', 0)
-        }
-    }
-    panels.append(panel)
-
-v1 = {
-    "id": None,
-    "uid": "brinks-analytics",
-    "title": db.get('title', 'BrinkCalçados — análise comercial'),
-    "tags": [],
-    "timezone": "browser",
-    "schemaVersion": 36,
-    "version": 0,
-    "panels": panels,
-    "time": {"from": "now-6h", "to": "now"},
-    "refresh": ""
-}
+db['id'] = None
+db['version'] = 0
 
 with open('/tmp/payload_analytics.json', 'w') as f:
-    json.dump({"dashboard": v1, "overwrite": True, "folderId": 0}, f)
+    json.dump({"dashboard": db, "overwrite": True, "folderId": 0}, f)
 
-print("Analytics painéis convertidos:", len(panels))
+print("Analytics painéis:", len(db.get('panels', [])))
 EOF_PY2
 
 RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
