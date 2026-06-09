@@ -120,7 +120,20 @@ datasources:
       connMaxLifetime: 14400
     version: 1
     editable: false
+
 EOF_DS
+
+sudo bash -c 'cat > /etc/grafana/provisioning/datasources/testdata.yaml << EOF
+apiVersion: 1
+datasources:
+  - name: TestData
+    type: testdata
+    uid: grafana-testdata-datasource
+    access: proxy
+    isDefault: false
+    version: 1
+    editable: false
+EOF'
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Subindo container Grafana na porta 3000..."
 sudo docker run -d \
@@ -129,6 +142,7 @@ sudo docker run -d \
   -p 3000:3000 \
   -v grafana-storage:/var/lib/grafana \
   -v /etc/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources \
+  -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-testdata-datasource \
   grafana/grafana
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Aguardando Grafana iniciar..."
@@ -242,6 +256,187 @@ RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
   -H 'Content-Type: application/json' \
   -d @/tmp/payload_analytics.json)
 echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Analytics: $RESULT"
+
+# ============================================================
+# DASHBOARD CSV (Importações Out–Dez 2025) — formato v1 estático gerado por Python
+# ============================================================
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Baixando CSV de importações do S3..."
+aws s3 cp s3://brinks-grafana-${user_suffix}/estatisticas_di_2025_10-12_refined.csv /tmp/brinks-importacoes.csv
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] Gerando dashboard CSV..."
+python3 << 'EOF_PY3'
+import json
+import csv
+from collections import defaultdict
+
+NOMES = {
+    'CHINA, REPUBLICA POPULAR': 'China',
+    'VIETNA': 'Vietnã',
+    'INDONESIA': 'Indonésia',
+    'ITALIA': 'Itália',
+    'CAMBOJA': 'Camboja',
+    'PARAGUAI': 'Paraguai',
+    'ESPANHA': 'Espanha',
+    'PORTUGAL': 'Portugal',
+    'INDIA': 'Índia',
+}
+
+COLORS = [
+    '#E63946','#F4A261','#457B9D','#2A9D8F',
+    '#E9C46A','#6D6875','#B5838D','#80B918','#A8DADC'
+]
+
+# ── Lê o CSV sem dependência de pandas ──────────────────────
+agg = defaultdict(lambda: {
+    'preco_vals': [], 'frete_vals': [], 'seguro_vals': [],
+    'valor_total': 0.0, 'volume_total': 0.0
+})
+
+with open('/tmp/brinks-importacoes.csv', newline='', encoding='utf-8') as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        pais = row['pais_origem'].strip()
+        agg[pais]['preco_vals'].append(float(row['preco_medio']))
+        agg[pais]['frete_vals'].append(float(row['frete_medio']))
+        agg[pais]['seguro_vals'].append(float(row['seguro_medio']))
+        agg[pais]['valor_total']  += float(row['valor_total'])
+        agg[pais]['volume_total'] += float(row['volume_total'])
+
+by_country = []
+for pais, d in agg.items():
+    preco  = sum(d['preco_vals'])  / len(d['preco_vals'])
+    frete  = sum(d['frete_vals'])  / len(d['frete_vals'])
+    seguro = sum(d['seguro_vals']) / len(d['seguro_vals'])
+    by_country.append({
+        'pais_label':    NOMES.get(pais, pais),
+        'preco_medio':   round(preco, 2),
+        'frete_medio':   round(frete, 2),
+        'seguro_medio':  round(seguro, 2),
+        'custo_chegada': round(preco + frete + seguro, 2),
+        'overhead_pct':  round((frete + seguro) / preco * 100, 1) if preco else 0,
+        'valor_total':   round(d['valor_total'], 2),
+        'volume_total':  round(d['volume_total'], 2),
+    })
+
+# ── Helpers ──────────────────────────────────────────────────
+def bargauge(pid, title, desc, col, unit, x, y, w=12, h=8):
+    rows = sorted(by_country, key=lambda r: r[col], reverse=True)
+    targets   = []
+    overrides = []
+    for i, row in enumerate(rows):
+        ref = chr(65 + i)
+        targets.append({
+            "refId": ref,
+            "scenarioId": "manual_entry",
+            "alias": row['pais_label'],
+            "points": [[row[col], 0]]
+        })
+        overrides.append({
+            "matcher": {"id": "byName", "options": row['pais_label']},
+            "properties": [{"id": "color", "value": {
+                "fixedColor": COLORS[i % len(COLORS)], "mode": "fixed"
+            }}]
+        })
+    return {
+        "id": pid, "title": title, "description": desc,
+        "type": "bargauge",
+        "datasource": {"type": "testdata", "uid": "grafana-testdata-datasource"},
+        "targets": targets,
+        "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": True,
+            "minVizWidth": 10, "minVizHeight": 10,
+        },
+        "fieldConfig": {
+            "defaults": {
+                "unit": unit, "min": 0,
+                "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": None}]},
+                "color": {"mode": "palette-classic"}
+            },
+            "overrides": overrides
+        },
+        "gridPos": {"h": h, "w": w, "x": x, "y": y}
+    }
+
+def stat(pid, title, desc, value, unit, x, y, w=6, h=4):
+    return {
+        "id": pid, "title": title, "description": desc,
+        "type": "stat",
+        "datasource": {"type": "testdata", "uid": "grafana-testdata-datasource"},
+        "targets": [{"refId": "A", "scenarioId": "manual_entry",
+                     "alias": title, "points": [[round(float(value), 2), 0]]}],
+        "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+            "orientation": "auto", "colorMode": "background",
+            "graphMode": "none", "justifyMode": "center", "textMode": "auto",
+        },
+        "fieldConfig": {
+            "defaults": {"unit": unit, "color": {"mode": "thresholds"},
+                "thresholds": {"mode": "absolute",
+                               "steps": [{"color": "blue", "value": None}]}},
+            "overrides": []
+        },
+        "gridPos": {"h": h, "w": w, "x": x, "y": y}
+    }
+
+# ── Métricas de topo ─────────────────────────────────────────
+total_valor  = sum(r['valor_total']  for r in by_country)
+total_volume = sum(r['volume_total'] for r in by_country)
+media_preco  = sum(r['preco_medio']  for r in by_country) / len(by_country)
+media_frete  = sum(r['frete_medio']  for r in by_country) / len(by_country)
+
+# ── Monta painéis ────────────────────────────────────────────
+panels = [
+    # Linha 0 — stats
+    stat(10, "Valor total importado",  "Out–Dez 2025",                 total_valor,  "currencyUSD",  0,  0),
+    stat(11, "Volume total (pares)",   "Out–Dez 2025",                 total_volume, "short",         6,  0),
+    stat(12, "Preço FOB médio/par",    "Média entre países",           media_preco,  "currencyUSD", 12,  0),
+    stat(13, "Frete médio/embarque",   "Média entre países",           media_frete,  "currencyUSD", 18,  0),
+
+    # Linha 1 — G1 e G2 do notebook
+    bargauge(1, "Preço médio FOB por par (US$)",
+             "G1 — Qual país vende o calçado mais barato? • Out–Dez 2025",
+             'preco_medio', 'currencyUSD', 0, 4),
+    bargauge(2, "Frete médio por embarque (US$)",
+             "G2 — Qual país tem o frete mais caro? • Out–Dez 2025",
+             'frete_medio', 'currencyUSD', 12, 4),
+
+    # Linha 2 — G4 e valor total
+    bargauge(3, "Volume total importado (pares)",
+             "G4 — Quais países enviam mais calçados? • Out–Dez 2025",
+             'volume_total', 'short', 0, 12),
+    bargauge(4, "Valor total importado (US$)",
+             "Valor FOB total declarado por país • Out–Dez 2025",
+             'valor_total', 'currencyUSD', 12, 12),
+]
+
+# ── Dashboard final ───────────────────────────────────────────
+dashboard = {
+    "id": None,
+    "uid": "brinks-csv",
+    "title": "BrinkCalçados — Importações Out–Dez 2025",
+    "tags": ["csv", "importacao"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 0,
+    "time": {"from": "now-6h", "to": "now"},
+    "refresh": "",
+    "panels": panels
+}
+
+with open('/tmp/payload_csv.json', 'w', encoding='utf-8') as f:
+    json.dump({"dashboard": dashboard, "overwrite": True, "folderId": 0}, f, ensure_ascii=False)
+
+print("CSV painéis gerados:", len(panels))
+EOF_PY3
+
+RESULT=$(curl -s -X POST http://admin:admin@localhost:3000/api/dashboards/db \
+  -H 'Content-Type: application/json' \
+  -d @/tmp/payload_csv.json)
+echo "$(date '+%Y-%m-%d %H:%M:%S') [grafana] CSV dashboard: $RESULT"
+
 
 # ============================================================
 # CLOUDWATCH AGENT

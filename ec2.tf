@@ -18,6 +18,14 @@ resource "aws_s3_object" "dashboard_analytics" {
   etag   = filemd5("${path.module}/deploy_temporario/brinks-analytics.json")
 }
 
+resource "aws_s3_object" "dashboard_csv_data" {
+  bucket = aws_s3_bucket.grafana_bucket.bucket
+  key    = "estatisticas_di_2025_10-12_refined.csv"
+  source = "${path.module}/deploy_temporario/estatisticas_di_2025_10-12_refined.csv"
+  etag   = filemd5("${path.module}/deploy_temporario/estatisticas_di_2025_10-12_refined.csv")
+}
+
+
 resource "aws_instance" "brinks-db" {
   ami                         = var.ami_ubuntu
   instance_type               = var.instance_type
@@ -58,13 +66,13 @@ resource "aws_instance" "brinks-pub-1" {
   key_name                    = var.instance_key
   iam_instance_profile        = "LabInstanceProfile"
 
-  user_data = templatefile("${path.module}/deploy_temporario/frontend.sh.tftpl", {
+  user_data_base64 = base64gzip(templatefile("${path.module}/deploy_temporario/frontend.sh.tftpl", {
     lb_dns_name      = aws_lb.brinks_alb.dns_name,
     compose_frontend = file("${path.module}/deploy_temporario/docker-compose-frontend.yml"),
     api_gateway_url  = "${aws_apigatewayv2_api.lambda_api.api_endpoint}/solicitar-relatorio",
     user_suffix      = var.user_suffix
     db_host          = aws_instance.brinks-db.private_ip
-  })
+  }))
 
   tags = {
     Name = "${var.instance_name_pub}-1"
